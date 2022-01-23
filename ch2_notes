@@ -1,0 +1,165 @@
+# CGO基础
+    hello2 会发生报错：
+      hello2中引入的C.cs变量的类型是当前main包的cgo构造的虚拟的C包下的*char类型（具体点是*main.C.char）
+    它和cgo_helper包引入的*C.char类型（具体点是*cgo_helper.C.char）是不同的
+      使用参数转型后在传入也是不可行的。
+    因为cgo_helper.PrintCString的参数是它自身包引入的*C.char类型，在外部是无法直接获取这个类型的
+
+cgo语句
+    // #cgo CFLAGS: -DPNG_DEBUG=1 -I./include
+    // #cgo LDFLAGS: -L/usr/local/lib -lpng
+    // #include <png.h>
+    import "C"
+    CFLAGS部分，-D部分定义了宏PNG_DEBUG，值为1
+    -I定义了头文件包含的检索目录
+    LDFLAGS部分，-L指定了链接时库文件检索目录，-l指定了链接时需要链接png库
+
+
+    CFLAGS对应C语言特有的编译选项、CXXFLAGS对应是C++特有的编译选项
+    CPPFLAGS则对应C和C++共有的编译选项
+
+build tag 条件编译
+    条件编译：只有在对应平台的宏被定义之后才会构建对应的代码
+    通过#cgo指令定义宏有个限制，它只能是基于Go语言支持的windows、darwin和linux等已经支持的操作系统
+
+    Go语言提供的build tag 条件编译特性则可以简单做到
+        // +build debug      ：只有在设置debug构建标志时才会被构建
+        如：go build -tags="debug"
+           go build -tags="windows debug"
+
+# 类型转换
+    对于比较复杂的C语言类型，推荐使用typedef关键字提供一个规则的类型命名，这样更利于在CGO中访问
+    只有字符串和切片在CGO中有一定的使用价值
+
+    在Go语言中:
+      C语言的结构体、联合、枚举类型不能作为匿名成员被嵌入到Go语言的结构体中
+      可以通过C.struct_xxx来访问C语言中定义的struct xxx结构体类型
+      如果结构体的成员名字中碰巧是Go语言的关键字，可以通过在成员名开头添加下划线来访问
+      如果需要操作位字段成员，需要通过在C语言中定义辅助函数来完成 （结构体中位字段对应的成员无法在Go语言中访问）
+      对于联合类型，可以通过C.union_xxx来访问C语言中定义的union xxx类型，Go语言中并不支持C语言联合类型，它们会被转为对应大小的字节数组
+        解决：
+            1. 在C语言中定义辅助函数
+            2. 通过Go语言的"encoding/binary"手工解码成员（注意大端小端问题）
+            3. 使用unsafe包强制转型为对应类型(这是性能最好的方式)
+            对于复杂的联合类型，推荐1
+      对于枚举类型，可以通过C.enum_xxx来访问C语言中定义的enum xxx结构体类型
+
+    在C语言中：
+      无法直接访问Go语言定义的结构体类型
+
+
+数组、字符串和切片
+    // Go string to C string
+    func C.CString(string) *C.char
+    // Go []byte slice to C array
+    func C.CBytes([]byte) unsafe.Pointer
+    // C string to Go string
+    func C.GoString(*C.char) string
+    // C data with explicit length to Go string
+    func C.GoStringN(*C.char, C.int) string
+    // C data with explicit length to Go []byte
+    func C.GoBytes(unsafe.Pointer, C.int) []byte
+
+    该组辅助函数都是以克隆的方式运行。
+      当Go语言字符串和切片向C语言转换时，克隆的内存由C语言的malloc函数分配，最终可以通过free函数释放
+      当C语言字符串或数组向Go语言转换时，克隆的内存由Go语言分配管理。
+    如果不希望单独分配内存，可以在Go语言中直接访问C语言的内存空间：
+
+指针间的转换
+    使用unsafe.Pointer桥接不同类型指针之间的转换，类似于void*类型的指针
+
+数值和指针的转换
+    int32 -> *C.char:
+        int32 -> uintptr
+                 uintptr -> unsafe.Pointer
+                            unsafe.Pointer -> *C.char
+    int32 <- *C.char 反过来即可
+
+切片间的转换
+    x，y通过unsafe.Pointer将其转为*reflect.SliceHeader类型*x,*y，然后对Data，Len，Cap进行赋值，将*px拷贝到*py，最终通过*y改变y
+    不同切片类型之间转换的思路是先构造一个空的目标切片，然后用原有的切片底层数据填充目标切片
+
+# 函数调用
+    CGO针对<errno.h>标准库的errno宏做的特殊支持：在CGO调用C函数时如果有两个返回值，那么第二个返回值将对应errno错误状态，当然也可以省略
+
+    void函数的返回值时，上述error依然支持：_,err :=
+
+    runtime.cgocall函数是实现Go语言到C语言函数跨界调用的关键
+    runtime.cgocallback函数是实现C语言到Go语言函数跨界调用的关键
+
+    将虚拟C包中的类型通过Go语言类型代替，在内部调用C函数时重新转型为C函数需要的类型。此时，外部用户将不再依赖qsort包内的虚拟C包
+
+# CGO内存模型
+    C语言空间的内存是稳定的，只要不是被人为提前释放，那么在Go语言空间可以放心大胆地使用
+    Go语言因为函数栈的动态伸缩可能导致栈中内存地址的移动。如果C语言持有的是移动之前的Go指针，那么以旧指针访问Go对象时会导致程序崩溃。
+
+      Go是从一个固定的虚拟地址空间分配内存。而C语言分配的内存则不能使用Go语言保留的虚拟内存空间。
+    如果已经确保了cgo函数返回的结果是安全的话，可以通过设置环境变量GODEBUG=cgocheck=0来关闭指针检查行为
+    cgocheck默认的值是1，对应一个简化版本的检测，如果需要完整的检测功能可以将cgocheck设置为2。
+
+# C++ 类包装
+go使用cpp
+    用纯C函数接口包装C++类
+    通过CGO将纯C函数接口映射到Go函数
+    做一个Go包装对象,将C++类到方法用Go对象的方法实现
+c++使用go
+    首先将Go对象映射为一个id
+    然后基于id导出对应的C接口函数
+    最后是基于C接口函数包装为C++对象
+
+# 静态库和动态库
+    为了支持go get命令直接下载并安装，我们C语言的#include语法可以将number库的源文件链接到当前的包
+        创建z_link_number_c.c文件如下：  #include "./number/number.c"
+    然后在执行go get或go build之类命令的时候，CGO就是自动构建number库对应的代码
+
+    如果使用的是第三方的静态库，我们需要先下载安装静态库到合适的位置。然后在#cgo命令中通过CFLAGS和LDFLAGS来指定头文件和库的位置。
+
+    linux: pkg-config命令可以查询要使用某个静态库或动态库时的编译和链接参数
+        #cgo命令中直接使用pkg-config命令来生成编译和链接参数
+
+# 编译和链接参数
+    CGO提供了CFLAGS/CPPFLAGS/CXXFLAGS三种参数:
+        CFLAGS对应C语言编译参数(以.c后缀名)
+        CPPFLAGS对应C/C++ 代码编译参数(.c,.cc,.cpp,.cxx)
+        CXXFLAGS对应纯C++编译参数(.cc,.cpp,*.cxx)
+
+    链接参数：LDFLAGS  主要包含要链接库的检索目录和要链接库的名字，不支持相对路径
+
+    pkg-config
+
+
+    go get
+
+多个非main包中导出C函数
+    不同包导出的Go函数将在同一个全局的名字空间，因此需要小心避免重名的问题
+    如果是从不同的包导出Go函数到C语言空间，那么cgo自动生成的_cgo_export.h文件将无法包含全部到处的函数声明，
+  我们必须通过手写头文件的方式什么导出的全部函数。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

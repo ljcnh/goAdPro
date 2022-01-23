@@ -1,0 +1,110 @@
+
+    RPC规则：方法只能有两个可序列化的参数，其中第二个参数是指针类型，并且返回一个error类型，同时必须是公开的方法
+
+
+
+# gRPC进阶
+针对每个gRPC链接的认证
+    可以使用openssl生成证书，进行验证
+
+    有两种方式：
+        $ openssl genrsa -out server.key 2048
+        $ openssl req -new -x509 -days 3650 \
+            -subj "/C=GB/L=China/O=grpc-server/CN=server.grpc.io" \
+            -key server.key -out server.crt
+
+        $ openssl genrsa -out client.key 2048
+        $ openssl req -new -x509 -days 3650 \
+            -subj "/C=GB/L=China/O=grpc-client/CN=client.grpc.io" \
+            -key client.key -out client.crt
+
+        生成server.key、server.crt、client.key和client.crt四个文件
+        以上这种方式，需要提前将服务器的证书告知客户端，这样客户端在链接服务器时才能进行对服务器证书认证。
+        不安全！
+
+    为了安全：可以通过一个安全可靠的根证书分别对服务器和客户端的证书进行签名
+        根证书生成
+        $ openssl genrsa -out ca.key 2048
+        $ openssl req -new -x509 -days 3650 \
+            -subj "/C=GB/L=China/O=gobook/CN=github.com" \
+            -key ca.key -out ca.crt
+        对服务器端证书进行签名
+        $ openssl req -new \
+            -subj "/C=GB/L=China/O=server/CN=server.io" \
+            -key server.key \
+            -out server.csr
+        $ openssl x509 -req -sha256 \
+            -CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
+            -in server.csr \
+            -out server.crt
+        CA根证书对客户端证书签名
+        $ openssl req -new \
+            -subj "/C=GB/L=China/O=client/CN=client.io" \
+            -key client.key \
+            -out client.csr
+        $ openssl x509 -req -sha256 \
+            -CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
+            -in client.csr \
+            -out client.crt
+
+        同时，在启动服务器时要配置根证书
+Token认证：针对用户
+    基于用户Token对不同的方法访问进行权限管理
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
