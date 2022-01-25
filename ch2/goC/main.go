@@ -7,4 +7,4 @@ func main() {
 	println(C.sum(1, 1))
 }
 
-// go tool cgo main.go  生成_obj
+// go tool cgo client.go  生成_obj

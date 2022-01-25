@@ -10,4 +10,4 @@ func sum(a, b C.int) C.int {
 
 func main() {}
 
-// go tool cgo main.go  生成_obj
+// go tool cgo client.go  生成_obj

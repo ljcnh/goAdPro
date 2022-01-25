@@ -16,7 +16,7 @@ func main() {
 	client := NewPubsubServiceClient(conn)
 
 	_, err = client.Publish(
-		context.Background(), &String{Value: "golang: hello Go"},
+		context.Background(), &String{Value: "golang: hello golang!"},
 	)
 	if err != nil {
 		log.Fatal(err)

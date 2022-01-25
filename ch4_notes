@@ -53,20 +53,42 @@ Token认证：针对用户
 
 
 
+gRPC和Web服务共存（在同一个端口之上）
+    http.ListenAndServeTLS(port, "server.crt", "server.key",
+        http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            if r.ProtoMajor != 2 {
+                mux.ServeHTTP(w, r)
+                return
+            }
+            if strings.Contains(
+                r.Header.Get("Content-Type"), "application/grpc",
+            ) {
+                grpcServer.ServeHTTP(w, r) // gRPC Server
+                return
+            }
+            mux.ServeHTTP(w, r)
+            return
+        }),
+    )
 
 
+生成message3.validator.pb.go
+    protoc --proto_path=C:\Users\10168\AppData\Local\JetBrains\GoLand2021.3\protoeditor\google --proto_path=D:\GoENV\gopath\pkg\mod --proto_path=. --govalidators_out=. --go_out=plugins=grpc:.  message3.proto
+生成grpc-gateway
+    protoc --proto_path=C:\Users\10168\AppData\Local\JetBrains\GoLand2021.3\protoeditor\google --proto_path=D:\GoENV\gopath\pkg\mod\google.golang.org\protobuf@v1.27.1\ --proto_path=D:\GoENV\gopath\pkg\mod --proto_path=D:\GoENV\gopath\pkg\mod\github.com\grpc-ecosystem\grpc-gateway@v1.16.0\third_party\googleapis\  --proto_path=. --grpc-gateway_out=. --go_out=plugins=grpc:.  hello.proto
+生成Swagger（hello.swagger.json）
+    protoc -I.  -ID:\GoENV\gopath\pkg\mod\github.com\grpc-ecosystem\grpc-gateway@v1.16.0\third_party\googleapis  -ID:\GoENV\gopath\pkg\mod\ --swagger_out=. hello.proto
 
 
+    4.7 启动rest服务的时候，报错
+        注释掉 pbgo.pb.go 中的
+            proto.RegisterType((*String)(nil), "hello_pb.String")
+            proto.RegisterFile("pbgo.proto", fileDescriptor_b985d811f57ce1c6)
+        可能是因为版本问题...  毕竟有点老了
 
 
-
-
-
-
-
-
-
-
+grpcurl工具
+    用于测试gRPC服务
 
 
 
