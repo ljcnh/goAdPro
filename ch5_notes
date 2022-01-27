@@ -1,0 +1,155 @@
+httprouter
+    使用的数据结构被称为压缩字典树
+    原理类似与字典树，最大的区别是在每个节点存放的字符串
+    每个节点如下所示（最主要的）：
+    path: 当前节点对应的路径中的字符串
+
+    wildChild: 子节点是否为参数节点，即 wildcard node，或者说 :id 这种类型的节点
+
+    nType: 当前节点类型，有四个枚举值: 分别为 static/root/param/catchAll。
+        static                   // 非根节点的普通字符串节点
+        root                     // 根节点
+        param                    // 参数节点，例如 :id
+        catchAll                 // 通配符节点，例如 *anyway
+
+    indices：子节点索引，当子节点为非参数类型，即本节点的wildChild为false时，会将每个子节点的首字母放在该索引数组。说是数组，实际上是个string。
+
+使用中间件剥离非业务逻辑
+    一步一步的分析
+    首先对于  http.Handle("/", timeMiddleware(http.HandlerFunc(hello)))
+        http.Handle 的定义为：
+            func Handle(pattern string, handler Handler) { DefaultServeMux.Handle(pattern, handler) }
+        第二个参数类型为 Handler
+    Handler 是什么呢？ 一个接口（合约）
+        type Handler interface {
+        	ServeHTTP(ResponseWriter, *Request)
+        }
+        只要存在ServeHTTP方法就是一个Handler
+    我们的func timeMiddleware(next http.Handler) http.Handler {}  返回值就是一个Handler 符合要求
+    对于timeMiddleware的参数就是一个 http.Handler
+        这里设计到了类型转换：
+            hello的定义如下所示：
+                func hello(wr http.ResponseWriter, r *http.Request)
+            HandlerFunc 定义如下所示：
+                type HandlerFunc func(ResponseWriter, *Request)
+                （理解：HandlerFunc 是一个类型，类型为func(ResponseWriter, *Request)   ）
+            我们hello与http.HandlerFunc有了一致的函数签名
+            将hello 转为http.HandlerFunc
+            还要注意到http.HandlerFunc实现了ServeHTTP方法。（符合Handler接口）
+    对于timeMiddleware内部的实现：
+        我们直接返回 http.HandlerFunc() 又做了一次类型转换，使其符合 Handler 接口
+
+更优雅的中间件写法
+    middleware.go
+
+QPS：Web服务的吞吐量
+
+
+流量限制
+    漏桶
+        是指我们有一个一直装满了水的桶，每过固定的一段时间即向外漏一滴水。如果你接到了这滴水，那么你就可以继续服务请求，如果没有接到，那么就需要等待下一滴水。
+    令牌桶  使用多
+        是指匀速向桶中添加令牌，服务请求时需要从桶中获取令牌，令牌的数目可以按照需要消耗的资源进行相应的调整。如果没有令牌，可以选择等待，或者放弃。
+
+QoS(Quality of Service)
+    QoS包含有可用性、吞吐量、时延、时延变化和丢失等指标。
+
+
+比较流行的纯后端API模块一般采用下述划分方法
+    Controller  与上述类似，服务入口，负责处理路由，参数校验，请求转发
+    Logic/Service，逻辑（服务）层  一般是业务逻辑的入口
+    DAO/Repository，这一层主要负责和数据、存储打交道
+
+
+表驱动开发
+    第一次听说，挺有意思的
+        func entry() {
+        	var bi BusinessInstance
+        	switch businessType {
+        	case TravelBusiness:
+        		bi = travelorder.New()
+        	case MarketBusiness:
+        		bi = marketorder.New()
+        	default:
+        		return errors.New("not supported business")
+        	}
+        }
+    可以改为：
+        var businessInstanceMap = map[int]BusinessInstance {
+        	TravelBusiness : travelorder.New(),
+        	MarketBusiness : marketorder.New(),
+        }
+        func entry() {
+        	bi := businessInstanceMap[businessType]
+        }
+    缺点：为需要对输入key计算哈希，在性能敏感的场合，需要多加斟酌
+
+
+    通过分批次部署实现灰度发布（系统的旧功能进行升级迭代）
+        假如服务部署在15个实例（可能是物理机，也可能是容器）上，我们把这15个实例分为四组，按照先后顺序，分别有1-2-4-8台机器，保证每次扩展时大概都是二倍的关系。
+    通过业务规则进行灰度发布（新功能上线）
+        常见的灰度发布系统会有下列规则提供选择：
+            按城市发布
+            按概率发布
+            按百分比发布
+            按白名单发布
+            按业务线发布
+            按UA发布(APP、Web、PC)
+            按分发渠道发布
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
